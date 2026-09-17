@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "universal-srm-fld"
+version = "1.0.0"
+description = "Universal spatial image steganalysis using SRM and Fisher LDA"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "scikit-learn>=1.3",
+    "matplotlib>=3.7",
+    "Pillow>=9.5",
+]
+
+[project.scripts]
+srm-steganalysis = "srm_steganalysis.cli:main"
+
+[tool.setuptools]
+packages = ["srm_steganalysis"]
