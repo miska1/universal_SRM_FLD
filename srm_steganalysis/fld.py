@@ -1,8 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
+import time
+
 import numpy as np
 from scipy.linalg import LinAlgError, solve
+
+from .logging_utils import LOGGER_NAME, elapsed_text
+
+
+LOGGER = logging.getLogger(LOGGER_NAME)
 
 
 @dataclass
@@ -47,6 +55,7 @@ class FisherLDAEnsemble:
         self.threshold_ = 0.0
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "FisherLDAEnsemble":
+        fit_started = time.perf_counter()
         # Keep the full SRM matrix in float32; promote only each small random
         # subspace to float64 while estimating its Fisher direction.
         X = np.asarray(X, dtype=np.float32)
@@ -67,9 +76,25 @@ class FisherLDAEnsemble:
 
         class_indices = (np.flatnonzero(y == 0), np.flatnonzero(y == 1))
         subspace_size = min(self.subspace_size, self.n_features_in_)
+        LOGGER.info(
+            "Fitting Fisher-LDA ensemble: samples=%d, features=%d, cover=%d, stego=%d",
+            len(X),
+            self.n_features_in_,
+            len(class_indices[0]),
+            len(class_indices[1]),
+        )
+        LOGGER.info(
+            "Training configuration: estimators=%d, subspace=%d, shrinkage=%g, ridge=%g, bootstrap=%s",
+            self.n_estimators,
+            subspace_size,
+            self.shrinkage,
+            self.ridge,
+            self.bootstrap,
+        )
         rng = np.random.default_rng(self.random_state)
         self.learners_: list[FisherLearner] = []
-        for _ in range(self.n_estimators):
+        progress_interval = max(1, self.n_estimators // 10)
+        for estimator_index in range(self.n_estimators):
             features = np.sort(
                 rng.choice(self.n_features_in_, size=subspace_size, replace=False)
             ).astype(np.int32)
@@ -112,8 +137,22 @@ class FisherLDAEnsemble:
                     score_scale=score_scale,
                 )
             )
+            completed = estimator_index + 1
+            if completed % progress_interval == 0 or completed == self.n_estimators:
+                LOGGER.info(
+                    "Trained Fisher learner %d/%d (%d%%), elapsed=%s",
+                    completed,
+                    self.n_estimators,
+                    round(100 * completed / self.n_estimators),
+                    elapsed_text(time.perf_counter() - fit_started),
+                )
         if not self.learners_:
             raise RuntimeError("All Fisher learners were degenerate")
+        LOGGER.info(
+            "Fisher-LDA ensemble training finished: %d learner(s), elapsed=%s",
+            len(self.learners_),
+            elapsed_text(time.perf_counter() - fit_started),
+        )
         return self
 
     def _check_X(self, X: np.ndarray) -> np.ndarray:

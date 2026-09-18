@@ -12,6 +12,7 @@ from srm_steganalysis.feature_io import (
     save_feature_dataset,
 )
 from srm_steganalysis.fld import FisherLDAEnsemble
+from srm_steganalysis.logging_utils import configure_logging, elapsed_text
 from srm_steganalysis.metrics import binary_metrics, select_balanced_threshold
 from srm_steganalysis.model_io import load_model, save_model
 
@@ -74,6 +75,19 @@ class FisherLDATests(unittest.TestCase):
         self.assertEqual(result["false_alarm_rate"], 0.5)
         self.assertEqual(result["missed_detection_rate"], 0.5)
         self.assertEqual(result["detection_probability"], 0.5)
+
+
+class LoggingTests(unittest.TestCase):
+    def test_file_logging_and_duration_format(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "run.log"
+            logger = configure_logging(path)
+            logger.info("timed stage completed in %s", elapsed_text(1.25))
+            for handler in logger.handlers:
+                handler.flush()
+            content = path.read_text(encoding="utf-8")
+            self.assertIn("timed stage completed in 1.250 s", content)
+            self.assertIn("INFO", content)
 
 
 if __name__ == "__main__":

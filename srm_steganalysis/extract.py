@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -11,9 +13,11 @@ import numpy as np
 from PIL import Image
 
 from .feature_io import FeatureMatrix, parse_feature_directory, save_feature_dataset
+from .logging_utils import LOGGER_NAME, elapsed_text
 
 
 SUPPORTED_SUFFIXES = {".pgm", ".png", ".bmp", ".tif", ".tiff"}
+LOGGER = logging.getLogger(LOGGER_NAME)
 
 
 @dataclass(frozen=True)
@@ -53,7 +57,7 @@ def _run_extractor(
     input_dir: Path,
     output_dir: Path,
     config: ExtractionConfig,
-) -> None:
+) -> float:
     command = [
         str(executable.resolve()),
         "--input-dir",
@@ -71,11 +75,13 @@ def _run_extractor(
         command.append("--parity")
     if config.verbose:
         command.append("--verbose")
+    LOGGER.debug("SRM command: %s", " ".join(command))
+    started = time.perf_counter()
     try:
         completed = subprocess.run(
             command,
             check=False,
-            capture_output=not config.verbose,
+            capture_output=True,
             text=True,
         )
     except OSError as error:
@@ -84,9 +90,15 @@ def _run_extractor(
             "extractor described in README.md."
         )
         raise RuntimeError(f"Could not start SRM extractor {executable}.{platform_hint}") from error
+    elapsed = time.perf_counter() - started
+    if completed.stdout.strip():
+        LOGGER.debug("SRM stdout:\n%s", completed.stdout.strip())
+    if completed.stderr.strip():
+        LOGGER.debug("SRM stderr:\n%s", completed.stderr.strip())
     if completed.returncode != 0:
         details = ((completed.stdout or "") + "\n" + (completed.stderr or "")).strip()
         raise RuntimeError(f"SRM extractor failed with code {completed.returncode}:\n{details}")
+    return elapsed
 
 
 def extract_images(
@@ -94,6 +106,7 @@ def extract_images(
     executable: str | Path,
     config: ExtractionConfig,
 ) -> FeatureMatrix:
+    extraction_started = time.perf_counter()
     if not images:
         raise ValueError("No images supplied")
     executable = Path(executable)
@@ -106,9 +119,18 @@ def extract_images(
     all_names: list[str] = []
     schema_names: tuple[str, ...] | None = None
     schema_sizes: tuple[int, ...] | None = None
+    batch_count = (len(images) + config.batch_size - 1) // config.batch_size
+    LOGGER.info(
+        "Starting SRM extraction: %d image(s), %d batch(es), batch size %d",
+        len(images),
+        batch_count,
+        config.batch_size,
+    )
 
-    for start in range(0, len(images), config.batch_size):
+    for batch_index, start in enumerate(range(0, len(images), config.batch_size), start=1):
+        batch_started = time.perf_counter()
         batch = images[start : start + config.batch_size]
+        LOGGER.info("Extracting batch %d/%d (%d image(s))", batch_index, batch_count, len(batch))
         with tempfile.TemporaryDirectory(prefix="srm_batch_") as temporary:
             temporary_path = Path(temporary)
             input_dir = temporary_path / "input"
@@ -118,11 +140,14 @@ def extract_images(
             staged_names: list[str] = []
             for offset, source in enumerate(batch):
                 staged_name = f"img_{start + offset:08d}.pgm"
+                LOGGER.debug("Staging %s as %s", source, staged_name)
                 _stage_as_pgm(Path(source), input_dir / staged_name)
                 staged_names.append(staged_name)
 
-            _run_extractor(executable, input_dir, output_dir, config)
+            extractor_elapsed = _run_extractor(executable, input_dir, output_dir, config)
+            parsing_started = time.perf_counter()
             parsed = parse_feature_directory(output_dir, expected_names=staged_names)
+            parsing_elapsed = time.perf_counter() - parsing_started
             if schema_names is None:
                 schema_names = parsed.submodel_names
                 schema_sizes = parsed.submodel_sizes
@@ -130,14 +155,29 @@ def extract_images(
                 raise ValueError("SRM feature schema changed between extraction batches")
             matrices.append(parsed.X)
             all_names.extend(str(Path(path)) for path in batch)
+        LOGGER.info(
+            "Completed batch %d/%d in %s (SRM %s, parsing %s)",
+            batch_index,
+            batch_count,
+            elapsed_text(time.perf_counter() - batch_started),
+            elapsed_text(extractor_elapsed),
+            elapsed_text(parsing_elapsed),
+        )
 
     assert schema_names is not None and schema_sizes is not None
-    return FeatureMatrix(
+    result = FeatureMatrix(
         X=np.concatenate(matrices, axis=0),
         image_names=tuple(all_names),
         submodel_names=schema_names,
         submodel_sizes=schema_sizes,
     )
+    LOGGER.info(
+        "Finished SRM extraction: shape=%s, submodels=%d, elapsed=%s",
+        result.X.shape,
+        len(result.submodel_names),
+        elapsed_text(time.perf_counter() - extraction_started),
+    )
+    return result
 
 
 def extract_dataset(
@@ -147,12 +187,17 @@ def extract_dataset(
     splits: Sequence[str],
     config: ExtractionConfig,
 ) -> list[Path]:
+    dataset_started = time.perf_counter()
     data_root = Path(data_root)
     output_root = Path(output_root)
     written: list[Path] = []
     reference_schema: tuple[tuple[str, ...], tuple[int, ...]] | None = None
+    LOGGER.info("Dataset root: %s", data_root.resolve())
+    LOGGER.info("Feature output root: %s", output_root.resolve())
+    LOGGER.info("Requested splits: %s", ", ".join(splits))
 
     for split in splits:
+        split_started = time.perf_counter()
         split_dir = data_root / split
         if not split_dir.is_dir():
             raise FileNotFoundError(f"Missing split directory: {split_dir}")
@@ -160,6 +205,7 @@ def extract_dataset(
         for label, class_name in ((0, "cover"), (1, "stego")):
             class_dir = split_dir / class_name
             images = find_images(class_dir)
+            LOGGER.info("Split %s, class %s: found %d image(s)", split, class_name, len(images))
             result = extract_images(images, executable, config)
             schema = (result.submodel_names, result.submodel_sizes)
             if reference_schema is None:
@@ -188,6 +234,13 @@ def extract_dataset(
             reference_schema[1],
         )
         written.append(output_path)
+        LOGGER.info(
+            "Saved split %s to %s in %s",
+            split,
+            output_path.resolve(),
+            elapsed_text(time.perf_counter() - split_started),
+        )
+    LOGGER.info("All extraction completed in %s", elapsed_text(time.perf_counter() - dataset_started))
     return written
 
 

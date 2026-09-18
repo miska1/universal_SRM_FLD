@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "universal-srm-fld"
-version = "1.0.0"
+version = "1.1.0"
 description = "Universal spatial image steganalysis using SRM and Fisher LDA"
 requires-python = ">=3.10"
 dependencies = [

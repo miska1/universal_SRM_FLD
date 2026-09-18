@@ -95,6 +95,12 @@ python -m srm_steganalysis extract-dataset \
   --batch-size 100
 ```
 
+Extraction is logged to both the console and `features/extraction.log`. The log
+records discovered images, the current split/class/batch, SRM execution time,
+feature-parsing time, split time, and total extraction time. Use `--verbose`
+for image staging and native-extractor output, or `--log-file PATH` to choose a
+different log file.
+
 On Windows, use:
 
 ```powershell
@@ -122,6 +128,13 @@ python -m srm_steganalysis train \
   --seed 12345
 ```
 
+Training is logged to the console and `results/training.log`. It records the
+feature-matrix dimensions, class counts, classifier settings, progress through
+the Fisher learners, elapsed fitting time, threshold selection, saved files,
+and total training time. The same timings are also stored under
+`timing_seconds` in `srm_fld.training.json`. Use `--verbose` or
+`--log-file PATH` in the same way as for extraction.
+
 When validation data is supplied, the decision threshold minimizes balanced
 validation error, `(false-alarm rate + missed-detection rate) / 2`. Without a
 validation set, the equal-prior Fisher boundary is used. Never tune the
@@ -145,6 +158,16 @@ The output directory contains:
 - `predictions.csv`
 - `roc_curve.csv`
 - `roc_curve.png`
+- `evaluation.log`
+
+All log files use the format:
+
+```text
+2026-09-18 09:15:42 | INFO     | Trained Fisher learner 50/100 (50%), elapsed=8.2 s
+```
+
+Log files are appended, so repeated experiments retain their previous run
+history.
 
 Labels are fixed as `0=cover` and `1=stego`. Therefore:
 

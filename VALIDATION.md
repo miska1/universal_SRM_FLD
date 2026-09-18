@@ -12,6 +12,8 @@ Validated on Linux with Python 3 and GCC 13.3:
 - the complete train/evaluate CLI produced a model, training report,
   predictions, JSON metrics, CSV ROC data, and PNG ROC plot on a synthetic
   labeled dataset.
+- extraction, training, and evaluation produced timestamped console/file logs;
+  the training JSON report also contained per-stage and total timing values.
 
 The supplied Windows `SRM.exe` was retained but was not executed in the Linux
 validation environment. It uses the same documented command-line arguments
