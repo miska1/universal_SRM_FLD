@@ -14,6 +14,8 @@ Validated on Linux with Python 3 and GCC 13.3:
   labeled dataset.
 - extraction, training, and evaluation produced timestamped console/file logs;
   the training JSON report also contained per-stage and total timing values.
+- two simultaneous SRM worker processes extracted independent one-image
+  batches, and their results were merged back into deterministic input order.
 
 The supplied Windows `SRM.exe` was retained but was not executed in the Linux
 validation environment. It uses the same documented command-line arguments

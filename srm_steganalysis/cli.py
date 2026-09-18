@@ -38,6 +38,7 @@ def command_extract(args: argparse.Namespace) -> int:
         erase_lsb=args.erase_lsb,
         parity=args.parity,
         batch_size=args.batch_size,
+        workers=args.workers,
         verbose=args.verbose,
     )
     outputs = extract_dataset(
@@ -181,6 +182,12 @@ def build_parser() -> argparse.ArgumentParser:
     extract_parser.add_argument("--srm-exe", help="Path to SRM.exe or portable srm_extract")
     extract_parser.add_argument("--splits", nargs="+", default=["train", "val", "test"])
     extract_parser.add_argument("--batch-size", type=int, default=100)
+    extract_parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Parallel SRM worker processes (default: 1)",
+    )
     extract_parser.add_argument("--T", type=int, default=2)
     extract_parser.add_argument("--order", type=int, default=4)
     extract_parser.add_argument("--erase-lsb", action="store_true")

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
+from srm_steganalysis.extract import ExtractionConfig, extract_images
 from srm_steganalysis.feature_io import (
     load_feature_dataset,
     parse_feature_directory,
@@ -42,6 +43,16 @@ class FeatureIOTests(unittest.TestCase):
             loaded = load_feature_dataset(path)
             np.testing.assert_array_equal(loaded["y"], [0, 1])
             self.assertEqual(np.asarray(loaded["files"]).tolist(), ["cover/a.pgm", "stego/a.pgm"])
+
+
+class ExtractionConfigurationTests(unittest.TestCase):
+    def test_worker_count_must_be_positive(self) -> None:
+        with self.assertRaisesRegex(ValueError, "workers must be positive"):
+            extract_images(
+                [Path("unused.pgm")],
+                Path("unused-extractor"),
+                ExtractionConfig(workers=0),
+            )
 
 
 class FisherLDATests(unittest.TestCase):

@@ -92,7 +92,8 @@ python -m srm_steganalysis extract-dataset \
   --output features \
   --splits train val test \
   --srm-exe build/srm/srm_extract \
-  --batch-size 100
+  --batch-size 100 \
+  --workers 4
 ```
 
 Extraction is logged to both the console and `features/extraction.log`. The log
@@ -101,6 +102,15 @@ feature-parsing time, split time, and total extraction time. Use `--verbose`
 for image staging and native-extractor output, or `--log-file PATH` to choose a
 different log file.
 
+`--workers N` selects the number of independent SRM extraction processes.
+Every process receives a separate batch and temporary directory; completed
+batches are reordered before the final feature matrix is saved, so changing
+the worker count does not change sample order or feature values. The default is
+`--workers 1` for backward-compatible sequential extraction. Use a value such
+as 2–4 initially because each process consumes CPU time and memory. Parallelism
+exists between batches, so there must be at least as many batches as workers;
+reduce `--batch-size` when a class contains too few batches.
+
 On Windows, use:
 
 ```powershell
@@ -108,12 +118,16 @@ python -m srm_steganalysis extract-dataset `
   --data data `
   --output features `
   --splits train val test `
-  --srm-exe third_party\srm\Release64bit\SRM.exe
+  --srm-exe third_party\srm\Release64bit\SRM.exe `
+  --batch-size 100 `
+  --workers 4
 ```
 
 Each split becomes one compressed `.npz` file containing features, labels,
 relative filenames, SRM submodel metadata, and a schema hash. The batch size
-controls peak extraction memory; it does not change features.
+controls peak extraction memory and parallel task granularity; it does not
+change features. The extraction log records the process ID that completed each
+batch.
 
 ## 4. Train
 
