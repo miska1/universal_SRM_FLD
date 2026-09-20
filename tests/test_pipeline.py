@@ -86,6 +86,9 @@ class FisherLDATests(unittest.TestCase):
         self.assertEqual(result["false_alarm_rate"], 0.5)
         self.assertEqual(result["missed_detection_rate"], 0.5)
         self.assertEqual(result["detection_probability"], 0.5)
+        self.assertEqual(result["specificity"], 0.5)
+        self.assertEqual(result["recall"], 0.5)
+        self.assertEqual(result["f1_score"], 0.5)
 
 
 class LoggingTests(unittest.TestCase):

@@ -31,6 +31,10 @@ def binary_metrics(y_true: np.ndarray, scores: np.ndarray, threshold: float) -> 
     false_alarm = fp / (fp + tn) if fp + tn else float("nan")
     missed_detection = fn / (fn + tp) if fn + tp else float("nan")
     detection_probability = tp / (tp + fn) if tp + fn else float("nan")
+    specificity = tn / (tn + fp) if tn + fp else float("nan")
+    recall = detection_probability
+    f1_denominator = 2 * tp + fp + fn
+    f1_score = 2 * tp / f1_denominator if f1_denominator else float("nan")
     accuracy = (tp + tn) / len(y_true) if len(y_true) else float("nan")
     auc = roc_auc_score(y_true, scores) if len(np.unique(y_true)) == 2 else float("nan")
     return {
@@ -41,6 +45,9 @@ def binary_metrics(y_true: np.ndarray, scores: np.ndarray, threshold: float) -> 
         "false_alarm_rate": float(false_alarm),
         "missed_detection_rate": float(missed_detection),
         "detection_probability": float(detection_probability),
+        "specificity": float(specificity),
+        "recall": float(recall),
+        "f1_score": float(f1_score),
         "roc_auc": float(auc),
         "confusion_matrix": {"tn": int(tn), "fp": int(fp), "fn": int(fn), "tp": int(tp)},
     }

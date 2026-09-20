@@ -8,8 +8,9 @@ pipeline:
 3. train an ensemble of regularized Fisher linear discriminants on random
    feature subspaces and balanced bootstrap samples;
 4. average the normalized discriminant scores; and
-5. report accuracy, balanced accuracy, false-alarm rate, missed-detection rate,
-   detection probability, ROC AUC, predictions, and an ROC curve.
+5. report accuracy, balanced accuracy, specificity, recall, F1 score,
+   false-alarm rate, missed-detection rate, detection probability, ROC AUC,
+   predictions, and an ROC curve.
 
 The feature code is the supplied 2012 implementation by Fridrich and
 Kodovský. Its default configuration contains 106 submodels and 34,671
@@ -188,6 +189,10 @@ Labels are fixed as `0=cover` and `1=stego`. Therefore:
 - false-alarm rate = cover images classified as stego / all cover images;
 - missed-detection rate = stego images classified as cover / all stego images;
 - detection probability = stego images correctly detected / all stego images.
+- specificity = cover images correctly classified / all cover images;
+- recall = stego images correctly detected / all stego images (therefore it is
+  equal to detection probability in this binary task);
+- F1 score = harmonic mean of stego precision and stego recall.
 
 ## Experimental protocol
 

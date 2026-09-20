@@ -16,6 +16,8 @@ Validated on Linux with Python 3 and GCC 13.3:
   the training JSON report also contained per-stage and total timing values.
 - two simultaneous SRM worker processes extracted independent one-image
   batches, and their results were merged back into deterministic input order.
+- metric validation confirmed specificity, recall, and F1 score values from a
+  known confusion matrix and their presence in `metrics.json`.
 
 The supplied Windows `SRM.exe` was retained but was not executed in the Linux
 validation environment. It uses the same documented command-line arguments
