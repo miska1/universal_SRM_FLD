@@ -18,6 +18,8 @@
 
 # Executables
 *.exe
+# Keep the supplied Windows SRM extractor
+!third_party/srm/Release64bit/SRM.exe
 *.out
 
 # Linker output
