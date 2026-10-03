@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 
-MODEL_FORMAT_VERSION = 1
+MODEL_FORMAT_VERSION = 2
 
 
 def save_model(path: str | Path, model: Any, metadata: dict[str, Any]) -> None:

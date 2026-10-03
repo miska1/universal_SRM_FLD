@@ -12,9 +12,9 @@ from srm_steganalysis.feature_io import (
     parse_feature_directory,
     save_feature_dataset,
 )
-from srm_steganalysis.fld import FisherLDAEnsemble
+from srm_steganalysis.fld import FisherLDAEnsemble, synchronized_cover_stego
 from srm_steganalysis.logging_utils import configure_logging, elapsed_text
-from srm_steganalysis.metrics import binary_metrics, select_balanced_threshold
+from srm_steganalysis.metrics import binary_metrics
 from srm_steganalysis.model_io import load_model, save_model
 
 
@@ -65,12 +65,15 @@ class FisherLDATests(unittest.TestCase):
         model = FisherLDAEnsemble(
             n_estimators=12,
             subspace_size=10,
-            random_state=9,
+            seed_subspaces=9,
+            seed_bootstrap=10,
         ).fit(X, y)
         scores = model.decision_function(X)
-        model.set_threshold(select_balanced_threshold(y, scores))
         metrics = binary_metrics(y, scores, model.threshold_)
         self.assertGreater(metrics["accuracy"], 0.95)
+        self.assertEqual(model.optimal_n_estimators_, 12)
+        self.assertEqual(model.optimal_subspace_size_, 10)
+        self.assertTrue(np.all(scores != 0.0))
 
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "model.pkl"
@@ -78,6 +81,44 @@ class FisherLDATests(unittest.TestCase):
             restored, metadata = load_model(path)
             np.testing.assert_allclose(restored.decision_function(X), scores)
             self.assertEqual(metadata["schema_hash"], "test")
+
+    def test_file_names_synchronize_cover_stego_pairs(self) -> None:
+        X = np.asarray([[20], [10], [101], [202]], dtype=np.float32)
+        y = np.asarray([0, 0, 1, 1], dtype=np.int8)
+        files = ["cover/b.pgm", "cover/a.pgm", "stego/a.pgm", "stego/b.pgm"]
+        cover, stego, names = synchronized_cover_stego(X, y, files)
+        self.assertEqual(names, ("a.pgm", "b.pgm"))
+        np.testing.assert_array_equal(cover[:, 0], [10, 20])
+        np.testing.assert_array_equal(stego[:, 0], [101, 202])
+
+    def test_missing_pair_is_rejected(self) -> None:
+        X = np.arange(8, dtype=np.float32).reshape(4, 2)
+        y = np.asarray([0, 0, 1, 1], dtype=np.int8)
+        files = ["cover/a.pgm", "cover/b.pgm", "stego/a.pgm", "stego/c.pgm"]
+        with self.assertRaisesRegex(ValueError, "not synchronized"):
+            synchronized_cover_stego(X, y, files)
+
+    def test_automatic_matlab_controls_select_l_and_d_sub(self) -> None:
+        rng = np.random.default_rng(11)
+        X0 = rng.normal(-0.4, 1.0, size=(30, 12))
+        X1 = rng.normal(0.4, 1.0, size=(30, 12))
+        X = np.vstack([X0, X1]).astype(np.float32)
+        y = np.r_[np.zeros(30, dtype=np.int8), np.ones(30, dtype=np.int8)]
+        model = FisherLDAEnsemble(
+            n_estimators="automatic",
+            subspace_size="automatic",
+            seed_subspaces=3,
+            seed_bootstrap=4,
+            d_sub_step=4,
+            l_kernel=[1.0],
+            l_min_length=3,
+            l_memory=3,
+            l_epsilon=2.0,
+            max_estimators=8,
+        ).fit(X, y)
+        self.assertEqual(model.optimal_n_estimators_, 3)
+        self.assertIn(model.optimal_subspace_size_, range(1, 13))
+        self.assertGreaterEqual(len(model.search_results_), 1)
 
     def test_metric_definitions(self) -> None:
         y = np.asarray([0, 0, 1, 1], dtype=np.int8)

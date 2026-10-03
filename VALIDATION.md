@@ -7,8 +7,9 @@ Validated on Linux with Python 3 and GCC 13.3:
   34,671 finite features;
 - batched dataset extraction produced the expected `(4, 34671)` matrix and
   labels `[0, 0, 1, 1]`;
-- all four unit tests passed (feature parsing/alignment, dataset serialization,
-  Fisher-LDA learning/model serialization, and metric definitions); and
+- all nine unit tests passed, including synchronized pair alignment/rejection,
+  fixed and automatic MATLAB-style ensemble training, model serialization,
+  feature I/O, extraction configuration, metrics, and logging;
 - the complete train/evaluate CLI produced a model, training report,
   predictions, JSON metrics, CSV ROC data, and PNG ROC plot on a synthetic
   labeled dataset.
@@ -18,6 +19,9 @@ Validated on Linux with Python 3 and GCC 13.3:
   batches, and their results were merged back into deterministic input order.
 - metric validation confirmed specificity, recall, and F1 score values from a
   known confusion matrix and their presence in `metrics.json`.
+- an end-to-end train/validation/test CLI run used automatic OOB selection,
+  saved the selected `d_sub`, `L`, OOB search history, and fixed majority-vote
+  threshold, then generated predictions and all requested metrics.
 
 The supplied Windows `SRM.exe` was retained but was not executed in the Linux
 validation environment. It uses the same documented command-line arguments

@@ -13,7 +13,7 @@ from .extract import ExtractionConfig, extract_dataset, resolve_extractor
 from .feature_io import load_feature_dataset
 from .fld import FisherLDAEnsemble
 from .logging_utils import LOGGER_NAME, configure_logging, elapsed_text
-from .metrics import binary_metrics, select_balanced_threshold, write_evaluation
+from .metrics import binary_metrics, write_evaluation
 from .model_io import load_model, save_model
 
 
@@ -22,6 +22,28 @@ def _dataset(path: str | Path) -> tuple[dict[str, np.ndarray | str], np.ndarray,
     X, y = data["X"], data["y"]
     assert isinstance(X, np.ndarray) and isinstance(y, np.ndarray)
     return data, X, y
+
+
+def _automatic_or_positive(value: str) -> int | str:
+    if value.lower() == "automatic":
+        return "automatic"
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("expected a positive integer or 'automatic'") from error
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("expected a positive integer or 'automatic'")
+    return parsed
+
+
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("expected a positive integer") from error
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("expected a positive integer")
+    return parsed
 
 
 def command_extract(args: argparse.Namespace) -> int:
@@ -78,11 +100,21 @@ def command_train(args: argparse.Namespace) -> int:
     model = FisherLDAEnsemble(
         n_estimators=args.estimators,
         subspace_size=args.subspace_size,
-        shrinkage=args.shrinkage,
-        ridge=args.ridge,
-        bootstrap=not args.no_bootstrap,
-        random_state=args.seed,
-    ).fit(X_train, y_train)
+        seed_subspaces=args.seed_subspaces,
+        seed_bootstrap=args.seed_bootstrap,
+        tie_break_seed=args.tie_break_seed,
+        d_sub_step=args.d_sub_step,
+        oob_tolerance=args.oob_tolerance,
+        l_kernel=np.ones(args.l_kernel_size, dtype=np.float64) / args.l_kernel_size,
+        l_min_length=args.l_min_length,
+        l_memory=args.l_memory,
+        l_epsilon=args.l_epsilon,
+        max_estimators=args.max_estimators,
+    ).fit(
+        X_train,
+        y_train,
+        np.asarray(train_data["files"]).astype(str).tolist(),
+    )
     timing["model_fit"] = time.perf_counter() - stage_started
 
     stage_started = time.perf_counter()
@@ -90,6 +122,10 @@ def command_train(args: argparse.Namespace) -> int:
     timing["training_scoring"] = time.perf_counter() - stage_started
     report: dict[str, object] = {
         "trained_estimators": len(model.learners_),
+        "optimal_subspace_size": model.optimal_subspace_size_,
+        "optimal_oob_error": model.optimal_oob_error_,
+        "oob_error_progress": model.oob_progress_.tolist(),
+        "subspace_search": model.search_results_,
     }
     if args.validation:
         stage_started = time.perf_counter()
@@ -103,18 +139,17 @@ def command_train(args: argparse.Namespace) -> int:
         if validation_data["schema_hash"] != train_data["schema_hash"]:
             raise ValueError("Training and validation feature schemas differ")
         validation_scores = model.decision_function(X_validation)
-        model.set_threshold(select_balanced_threshold(y_validation, validation_scores))
         report["validation"] = binary_metrics(y_validation, validation_scores, model.threshold_)
-        report["threshold_selected_on"] = "validation"
+        report["threshold_selected_on"] = "fixed MATLAB majority-vote boundary"
         timing["validation"] = time.perf_counter() - stage_started
         logger.info(
-            "Selected validation threshold %.8f in %s",
+            "Evaluated validation data at fixed majority-vote threshold %.1f in %s",
             model.threshold_,
             elapsed_text(timing["validation"]),
         )
     else:
-        report["threshold_selected_on"] = "equal-prior Fisher boundary"
-        logger.info("Using equal-prior Fisher decision threshold %.8f", model.threshold_)
+        report["threshold_selected_on"] = "fixed MATLAB majority-vote boundary"
+        logger.info("Using fixed MATLAB majority-vote threshold %.1f", model.threshold_)
     report["training"] = binary_metrics(y_train, train_scores, model.threshold_)
 
     metadata = {
@@ -123,13 +158,26 @@ def command_train(args: argparse.Namespace) -> int:
         "submodel_sizes": np.asarray(train_data["submodel_sizes"]).astype(int).tolist(),
         "n_features": int(X_train.shape[1]),
         "labels": {"0": "cover", "1": "stego"},
+        "classifier": "DDE Lab MATLAB ensemble 2.0 procedure",
         "hyperparameters": {
             "estimators": args.estimators,
             "subspace_size": args.subspace_size,
-            "shrinkage": args.shrinkage,
-            "ridge": args.ridge,
-            "bootstrap": not args.no_bootstrap,
-            "seed": args.seed,
+            "seed_subspaces": args.seed_subspaces,
+            "seed_bootstrap": args.seed_bootstrap,
+            "tie_break_seed": args.tie_break_seed,
+            "d_sub_step": args.d_sub_step,
+            "oob_tolerance": args.oob_tolerance,
+            "l_kernel_size": args.l_kernel_size,
+            "l_min_length": args.l_min_length,
+            "l_memory": args.l_memory,
+            "l_epsilon": args.l_epsilon,
+            "max_estimators": args.max_estimators,
+            "paired_bagging": True,
+        },
+        "selected": {
+            "estimators": model.optimal_n_estimators_,
+            "subspace_size": model.optimal_subspace_size_,
+            "oob_error": model.optimal_oob_error_,
         },
     }
     stage_started = time.perf_counter()
@@ -196,17 +244,35 @@ def build_parser() -> argparse.ArgumentParser:
     extract_parser.add_argument("--verbose", action="store_true")
     extract_parser.set_defaults(func=command_extract)
 
-    train_parser = subparsers.add_parser("train", help="Train Fisher-LDA ensemble")
+    train_parser = subparsers.add_parser(
+        "train", help="Train the original MATLAB-style Fisher-LDA ensemble"
+    )
     train_parser.add_argument("--train", required=True)
     train_parser.add_argument("--validation")
     train_parser.add_argument("--model", required=True)
     train_parser.add_argument("--report")
-    train_parser.add_argument("--estimators", type=int, default=100)
-    train_parser.add_argument("--subspace-size", type=int, default=200)
-    train_parser.add_argument("--shrinkage", type=float, default=0.1)
-    train_parser.add_argument("--ridge", type=float, default=1e-6)
-    train_parser.add_argument("--seed", type=int, default=12345)
-    train_parser.add_argument("--no-bootstrap", action="store_true")
+    train_parser.add_argument(
+        "--estimators",
+        type=_automatic_or_positive,
+        default="automatic",
+        help="Number of learners L or 'automatic' (default: automatic)",
+    )
+    train_parser.add_argument(
+        "--subspace-size",
+        type=_automatic_or_positive,
+        default="automatic",
+        help="Random-subspace dimension d_sub or 'automatic' (default: automatic)",
+    )
+    train_parser.add_argument("--seed-subspaces", type=int, default=12345)
+    train_parser.add_argument("--seed-bootstrap", type=int, default=67890)
+    train_parser.add_argument("--tie-break-seed", type=int, default=1)
+    train_parser.add_argument("--d-sub-step", type=_positive_int, default=200)
+    train_parser.add_argument("--oob-tolerance", type=float, default=0.02)
+    train_parser.add_argument("--l-kernel-size", type=_positive_int, default=5)
+    train_parser.add_argument("--l-min-length", type=_positive_int, default=25)
+    train_parser.add_argument("--l-memory", type=_positive_int, default=50)
+    train_parser.add_argument("--l-epsilon", type=float, default=0.005)
+    train_parser.add_argument("--max-estimators", type=_positive_int, default=500)
     train_parser.add_argument("--log-file", help="Log path (default: MODEL_DIRECTORY/training.log)")
     train_parser.add_argument("--verbose", action="store_true")
     train_parser.set_defaults(func=command_train)

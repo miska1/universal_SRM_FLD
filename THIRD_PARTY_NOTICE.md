@@ -17,3 +17,13 @@ enhancements, or modifications.
 
 Original contacts listed by the package: Vojtěch Holub, Jan Kodovský, and
 Jessica Fridrich, DDE Lab, Binghamton University.
+
+## Ensemble-classifier acknowledgement
+
+The Python classifier in `srm_steganalysis/fld.py` is an independent
+reimplementation of the training and testing procedure published in the DDE
+Lab MATLAB Ensemble Classifier version 2.0 (`ensemble_training.m` and
+`ensemble_testing.m`). The MATLAB files themselves are not redistributed in
+this project. The corresponding publication is J. Kodovský, J. Fridrich, and
+V. Holub, “Ensemble Classifiers for Steganalysis of Digital Media,” IEEE TIFS,
+7(2), 2012.

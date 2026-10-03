@@ -3,4 +3,4 @@
 from .fld import FisherLDAEnsemble
 
 __all__ = ["FisherLDAEnsemble"]
-__version__ = "1.2.1"
+__version__ = "2.0.0"

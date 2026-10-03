@@ -300,10 +300,35 @@ def extract_dataset(
         split_dir = data_root / split
         if not split_dir.is_dir():
             raise FileNotFoundError(f"Missing split directory: {split_dir}")
+
+        class_directories = {
+            "cover": split_dir / "cover",
+            "stego": split_dir / "stego",
+        }
+        images_by_class: dict[str, dict[str, Path]] = {}
+        for class_name, class_dir in class_directories.items():
+            images = find_images(class_dir)
+            relative_map = {path.relative_to(class_dir).as_posix(): path for path in images}
+            if len(relative_map) != len(images):
+                raise ValueError(f"Duplicate relative image paths in {class_dir}")
+            images_by_class[class_name] = relative_map
+
+        cover_names = set(images_by_class["cover"])
+        stego_names = set(images_by_class["stego"])
+        if cover_names != stego_names:
+            missing_stego = sorted(cover_names - stego_names)
+            missing_cover = sorted(stego_names - cover_names)
+            raise ValueError(
+                f"Split {split} does not contain synchronized cover/stego pairs; "
+                f"missing stego={missing_stego[:3]}, missing cover={missing_cover[:3]}"
+            )
+        pair_names = sorted(cover_names)
+        LOGGER.info("Split %s: verified %d synchronized cover/stego pair(s)", split, len(pair_names))
+
         class_results: list[tuple[int, Path, list[Path], FeatureMatrix]] = []
         for label, class_name in ((0, "cover"), (1, "stego")):
-            class_dir = split_dir / class_name
-            images = find_images(class_dir)
+            class_dir = class_directories[class_name]
+            images = [images_by_class[class_name][name] for name in pair_names]
             LOGGER.info("Split %s, class %s: found %d image(s)", split, class_name, len(images))
             result = extract_images(images, executable, config)
             schema = (result.submodel_names, result.submodel_sizes)

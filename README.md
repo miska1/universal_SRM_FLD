@@ -4,10 +4,10 @@ This project implements a conventional universal spatial-image steganalysis
 pipeline:
 
 1. extract the 34,671-dimensional Spatial Rich Model (SRM) from each image;
-2. standardize each feature using training-set statistics;
-3. train an ensemble of regularized Fisher linear discriminants on random
-   feature subspaces and balanced bootstrap samples;
-4. average the normalized discriminant scores; and
+2. synchronize every cover image with its corresponding stego image;
+3. train the DDE Lab MATLAB-style ensemble of Fisher linear discriminants on
+   random feature subspaces and paired bootstrap samples;
+4. combine binary base-learner decisions by majority voting; and
 5. report accuracy, balanced accuracy, specificity, recall, F1 score,
    false-alarm rate, missed-detection rate, detection probability, ROC AUC,
    predictions, and an ROC curve.
@@ -20,14 +20,18 @@ features (`T=2`, fourth-order co-occurrences, and all standard symmetries).
 
 A single full-covariance Fisher LDA would require estimating and solving a
 34,671 by 34,671 covariance matrix. That is statistically singular for most
-steganalysis datasets and computationally wasteful. This implementation uses
+steganalysis datasets and computationally wasteful. This implementation follows
+the original `ensemble_training.m` and `ensemble_testing.m` procedure and uses
 random subspaces. For base learner `b`, it computes
 
 `w_b = (S_w,b + regularization)^(-1) (mu_stego,b - mu_cover,b)`
 
-and uses the equal-prior midpoint between the two projected means as its
-decision boundary. Averaging many normalized base-learner scores preserves the
-Fisher-LDA classifier requested while making SRM classification practical.
+using the sum of the cover and stego within-class covariance matrices and the
+same small diagonal regularization used by the MATLAB code. Each base learner
+selects the projected threshold that minimizes false alarms plus missed
+detections on its paired bootstrap sample. Its output is one cover/stego vote.
+The ensemble uses majority voting, and out-of-bag error can automatically
+select the subspace dimension (`d_sub`) and number of learners (`L`).
 
 ## Input layout
 
@@ -48,9 +52,11 @@ data/
     stego/
 ```
 
-Cover/stego pairs should have matching relative filenames and must stay in the
-same split. Do not randomly split individual images after combining paired
-cover and stego data; that leaks image content across train and test.
+Cover/stego pairs **must have matching relative filenames** and must stay in the
+same split. Extraction rejects unmatched pairs because the original ensemble
+bootstraps cover/stego pairs together. Do not randomly split individual images
+after combining paired cover and stego data; that leaks image content across
+train and test.
 
 ## 1. Install Python dependencies
 
@@ -137,26 +143,38 @@ python -m srm_steganalysis train \
   --train features/train.npz \
   --validation features/val.npz \
   --model results/srm_fld.pkl \
-  --estimators 100 \
-  --subspace-size 200 \
-  --shrinkage 0.1 \
-  --seed 12345
+  --estimators automatic \
+  --subspace-size automatic \
+  --seed-subspaces 12345 \
+  --seed-bootstrap 67890
 ```
 
 Training is logged to the console and `results/training.log`. It records the
-feature-matrix dimensions, class counts, classifier settings, progress through
-the Fisher learners, elapsed fitting time, threshold selection, saved files,
-and total training time. The same timings are also stored under
-`timing_seconds` in `srm_fld.training.json`. Use `--verbose` or
+feature-matrix dimensions, synchronized pair count, classifier settings,
+per-candidate out-of-bag (OOB) error, selected `d_sub` and `L`, fitting time,
+saved files, and total training time. The same timings and the complete OOB
+search history are stored in `srm_fld.training.json`. Use `--verbose` or
 `--log-file PATH` in the same way as for extraction.
 
-When validation data is supplied, the decision threshold minimizes balanced
-validation error, `(false-alarm rate + missed-detection rate) / 2`. Without a
-validation set, the equal-prior Fisher boundary is used. Never tune the
-threshold on the test set.
+The defaults reproduce the MATLAB ensemble's automatic controls:
 
-For a stronger but slower experiment, try 200 learners and a 500-feature
-subspace. Select these hyperparameters only on validation data.
+- `--subspace-size automatic` searches for `d_sub` using OOB error;
+- `--estimators automatic` stops when the smoothed OOB error stabilizes;
+- `--d-sub-step 200` and `--oob-tolerance 0.02` control the subspace search;
+- `--l-min-length 25`, `--l-memory 50`, `--l-epsilon 0.005`, and
+  `--l-kernel-size 5` control automatic `L`; and
+- `--max-estimators 500` is the safety limit used by the original code.
+
+You can use fixed values, for example `--estimators 100 --subspace-size 200`,
+for a controlled experiment. Paired bagging is always enabled, as in MATLAB
+ensemble version 2.0. Validation data is reported at the fixed majority-vote
+boundary of zero; it no longer changes the decision threshold.
+
+The algorithm matches the MATLAB training/testing logic, but models are not
+expected to be numerically bit-identical because NumPy/SciPy and MATLAB differ
+in random-permutation and linear-algebra implementations.
+See `MATLAB_ENSEMBLE_COMPATIBILITY.md` for the function-by-function mapping and
+the remaining reproducibility differences.
 
 ## 5. Evaluate
 
@@ -178,7 +196,7 @@ The output directory contains:
 All log files use the format:
 
 ```text
-2026-09-18 09:15:42 | INFO     | Trained Fisher learner 50/100 (50%), elapsed=8.2 s
+2026-09-27 10:15:42 | INFO     | Completed d_sub=400: OOB=0.1840, L=76, elapsed=8.2 s
 ```
 
 Log files are appended, so repeated experiments retain their previous run
