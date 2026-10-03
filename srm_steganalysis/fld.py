@@ -425,18 +425,18 @@ class FisherLDAEnsemble:
             oob_indices = np.flatnonzero(~in_bag)
 
             learner = self._train_fld(
-                X_cover[bootstrap][:, features],
-                X_stego[bootstrap][:, features],
+                X_cover[np.ix_(bootstrap, features)],
+                X_stego[np.ix_(bootstrap, features)],
                 features,
             )
             learners.append(learner)
 
             if len(oob_indices):
                 cover_projection = (
-                    X_cover[oob_indices][:, features] @ learner.weights - learner.bias
+                    X_cover[np.ix_(oob_indices, features)] @ learner.weights - learner.bias
                 )
                 stego_projection = (
-                    X_stego[oob_indices][:, features] @ learner.weights - learner.bias
+                    X_stego[np.ix_(oob_indices, features)] @ learner.weights - learner.bias
                 )
                 cover_votes[oob_indices] += np.sign(cover_projection).astype(np.int32)
                 stego_votes[oob_indices] += np.sign(stego_projection).astype(np.int32)
